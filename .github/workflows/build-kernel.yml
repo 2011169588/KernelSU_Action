@@ -208,8 +208,9 @@ jobs:
         export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
         export LOCALVERSION=""
         
-        CC_ARG="clang"
-        [ "${{ env.ENABLE_CCACHE }}" = "true" ] && CC_ARG="ccache clang"
+        # 关键修复：添加 -fno-integrated-as 避免 VDSO 汇编错误
+        CC_ARG="clang -fno-integrated-as"
+        [ "${{ env.ENABLE_CCACHE }}" = "true" ] && CC_ARG="ccache clang -fno-integrated-as"
         
         # 生成 .config
         make O=out ARCH=${{ env.ARCH }} ${{ env.CUSTOM_CMDS }} ${{ env.EXTRA_CMDS }} ${{ env.GCC_64 }} ${{ env.GCC_32 }} ${{ env.KERNEL_CONFIG }} SHELL=/bin/bash
