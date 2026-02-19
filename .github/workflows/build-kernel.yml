@@ -13,13 +13,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # 1. 强制使用 bash，避免 dash 的算术表达式兼容问题
+    # 强制使用 bash，避免 dash 的算术表达式兼容问题
     - name: Force use bash as default shell
       run: |
         sudo ln -sf /bin/bash /bin/sh
         echo "Now /bin/sh points to: $(ls -l /bin/sh)"
 
-    # 2. 从 config.env 读取配置到环境变量
+    # 从 config.env 读取配置到环境变量
     - name: Prepare Configuration
       run: |
         CONFIG_ENV=$(grep -w "CONFIG_ENV" config.env | head -n 1 | cut -d "=" -f 2)
@@ -74,7 +74,7 @@ jobs:
             fi
         done
 
-    # 3. 释放磁盘空间（可选，但推荐）
+    # 释放磁盘空间（可选）
     - name: Remove unused packages
       if: env.REMOVE_UNUSED_PACKAGES == 'true'
       uses: jlumbroso/free-disk-space@main
@@ -87,13 +87,13 @@ jobs:
         docker-images: true
         swap-storage: false
 
-    # 4. 增加 swap 空间，防止内存不足
+    # 增加 swap 空间
     - name: Set swap to 10G
       uses: pierotofy/set-swap-space@master
       with:
         swap-size-gb: 10
 
-    # 5. 安装编译依赖
+    # 安装编译依赖
     - name: Setup build kernel environment
       run: |
         echo "BUILD_TIME=$(TZ=Asia/Shanghai date "+%Y%m%d%H%M")" >> $GITHUB_ENV
@@ -101,7 +101,7 @@ jobs:
         sudo apt-get install -y git ccache automake flex lzop bison gperf build-essential zip curl zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 lib32ncurses5-dev libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler python2 python3
         mkdir -p $GITHUB_WORKSPACE/kernel_workspace
 
-    # 6. 下载 Clang 工具链（AOSP 官方）
+    # 下载 Clang 工具链
     - name: Download Clang-aosp
       if: env.USE_CUSTOM_CLANG != 'true'
       run: |
@@ -110,7 +110,7 @@ jobs:
         wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/${{ env.CLANG_BRANCH }}/clang-${{ env.CLANG_VERSION }}.tar.gz
         tar -C clang-aosp/ -zxf clang-${{ env.CLANG_VERSION }}.tar.gz
 
-    # 7. 下载 GCC 工具链（AOSP 官方）
+    # 下载 GCC 工具链
     - name: Download Gcc-aosp
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace
@@ -127,7 +127,7 @@ jobs:
             echo "GCC_32=CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/kernel_workspace/gcc-32/bin/arm-linux-androideabi-" >> $GITHUB_ENV
         fi
 
-    # 8. 下载内核源码
+    # 下载内核源码
     - name: Download kernel source
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace
@@ -140,7 +140,7 @@ jobs:
           echo "LOCALVERSION=" >> $GITHUB_ENV
         fi
 
-    # 9. 集成 KernelSU（带安全目录检查和健壮版本计算）
+    # 集成 KernelSU
     - name: Setup KernelSU
       if: env.ENABLE_KERNELSU == 'true'
       run: |
@@ -155,7 +155,7 @@ jobs:
         KSU_VERSION=$((KSU_REV + 10200))
         echo "UPLOADNAME=-KernelSU_$KSU_VERSION" >> $GITHUB_ENV
 
-    # 10. 配置内核（安全地追加配置项）
+    # 配置内核（安全地追加配置项）
     - name: Setup Configuration for Kernel
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
@@ -168,7 +168,7 @@ jobs:
             echo "CONFIG_KSU=y" >> "$CONF"
         fi
         
-        # KPROBES 配置（使用复合命令确保全部写入）
+        # KPROBES 配置（先删除已有行，再追加，避免重复）
         if [ "${{ env.ADD_KPROBES_CONFIG }}" = "true" ]; then
             sed -i '/CONFIG_MODULES/d;/CONFIG_KPROBES/d;/CONFIG_HAVE_KPROBES/d;/CONFIG_KPROBE_EVENTS/d' "$CONF"
             {
@@ -183,14 +183,14 @@ jobs:
         [ "${{ env.DISABLE_CC_WERROR }}" = "true" ] && echo "CONFIG_CC_WERROR=n" >> "$CONF"
         echo "CONFIG_LOCALVERSION_AUTO=n" >> "$CONF"
 
-    # 11. 修复 OpenSSL 3.0 兼容性（针对老内核的签名工具）
+    # 修复 OpenSSL 3.0 兼容性
     - name: Fix OpenSSL 3.0 compatibility
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         sed -i 's/ERR(ERR_get_error_line(&file, \&line), ": %s:%d", file, line);/ERR(ERR_get_error_line(\&file, \&line), "");/g' scripts/sign-file.c
         sed -i 's/fprintf(stderr, ": %s:%d\\n", file, line);/fprintf(stderr, "\\n");/g' scripts/sign-file.c
 
-    # 12. 启用 ccache 加速二次编译
+    # 启用 ccache
     - name: Setup ccache
       if: env.ENABLE_CCACHE == 'true'
       uses: hendrikmuhs/ccache-action@v1.2
@@ -198,27 +198,31 @@ jobs:
         key: build-kernel-${{ env.DEVICE }}${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}
         max-size: 2G
 
-    # 13. 真正编译内核（只一次，避免重复）
+    # 编译内核（包含 olddefconfig 自动填充缺失配置）
     - name: Build kernel
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         git config --global --add safe.directory $(pwd)
+        git config --global --add safe.directory $(pwd)/KernelSU || true
+        
         export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang-aosp/bin:$PATH
         export KBUILD_BUILD_HOST=Github-Action
         export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
         export LOCALVERSION=""
         
-        # 关键修复：添加 -fno-integrated-as 避免 VDSO 汇编错误
         CC_ARG="clang -fno-integrated-as"
         [ "${{ env.ENABLE_CCACHE }}" = "true" ] && CC_ARG="ccache clang -fno-integrated-as"
         
-        # 生成 .config
+        # 1. 生成 .config
         make O=out ARCH=${{ env.ARCH }} ${{ env.CUSTOM_CMDS }} ${{ env.EXTRA_CMDS }} ${{ env.GCC_64 }} ${{ env.GCC_32 }} ${{ env.KERNEL_CONFIG }} SHELL=/bin/bash
         
-        # 正式编译（一次完成）
+        # 2. 关键修复：自动填充所有未定义配置为默认值，避免交互式询问
+        make O=out ARCH=${{ env.ARCH }} olddefconfig SHELL=/bin/bash
+        
+        # 3. 正式编译
         make -j$(nproc --all) CC="$CC_ARG" O=out ARCH=${{ env.ARCH }} ${{ env.CUSTOM_CMDS }} ${{ env.EXTRA_CMDS }} ${{ env.GCC_64 }} ${{ env.GCC_32 }} SHELL=/bin/bash
 
-    # 14. 检查编译产物是否存在（使用绝对路径）
+    # 检查编译产物
     - name: Check a kernel output files
       run: |
         TARGET="$GITHUB_WORKSPACE/kernel_workspace/android-kernel/out/arch/${{ env.ARCH }}/boot/${{ env.KERNEL_IMAGE_NAME }}"
@@ -229,7 +233,7 @@ jobs:
             exit 1
         fi
 
-    # 15. 打包为 AnyKernel3 刷机包（严格检查 DTBO）
+    # 打包为 AnyKernel3
     - name: Make Anykernel3
       if: env.CHECK_FILE_IS_OK == 'true'
       run: |
@@ -249,7 +253,7 @@ jobs:
         fi
         rm -rf AnyKernel3/.git* AnyKernel3/README.md
 
-    # 16. 上传构建产物
+    # 上传构建产物
     - name: Upload Artifacts
       if: env.CHECK_FILE_IS_OK == 'true'
       uses: actions/upload-artifact@v4
