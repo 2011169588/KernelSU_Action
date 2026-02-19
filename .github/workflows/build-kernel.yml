@@ -12,6 +12,13 @@ jobs:
       CCACHE_HARDLINK: "true"
     steps:
     - uses: actions/checkout@v4
+
+    # ---- 新增：强制将 sh 链接到 bash ----
+    - name: Force use bash as default shell
+      run: |
+        sudo ln -sf /bin/bash /bin/sh
+        echo "Now /bin/sh points to: $(ls -l /bin/sh)"
+
     - name: Prepare Configuration
       run: |
         CONFIG_ENV=$(grep -w "CONFIG_ENV" config.env | head -n 1 | cut -d "=" -f 2)
@@ -199,12 +206,15 @@ jobs:
             echo "HAVE_SOURCE_BOOT_IMAGE=true" >> $GITHUB_ENV
         fi
 
+    # ---- 修改 KernelSU 版本计算逻辑，防止变量污染 ----
     - name: Setup KernelSU
       if: env.ENABLE_KERNELSU == 'true'
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s ${{ env.KERNELSU_TAG }}
-        KSU_VERSION=$(cd KernelSU && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
+        # 安全计算 KSU_VERSION：如果 git rev-list 失败，则取 0
+        KSU_REV=$(cd KernelSU && /usr/bin/git rev-list --count HEAD 2>/dev/null || echo 0)
+        KSU_VERSION=$(expr $KSU_REV + 10200)
         echo "UPLOADNAME=-KernelSU_$KSU_VERSION" >> $GITHUB_ENV
 
     - name: Setup Configuration for Kernel
@@ -256,7 +266,6 @@ jobs:
         key: build-kernel-${{ env.DEVICE }}${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}
         max-size: 2G
 
-    # 修改后的 Build kernel 步骤，添加 LOCALVERSION 环境变量并强制使用 bash
     - name: Build kernel
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
@@ -269,7 +278,7 @@ jobs:
           export KSU_EXPECTED_SIZE=${{ env.KSU_EXPECTED_SIZE }}
           export KSU_EXPECTED_HASH=${{ env.KSU_EXPECTED_HASH }}
         fi
-        # 第一次 make：生成配置（此时会调用 setlocalversion，但 LOCALVERSION 已清空，并指定 SHELL=/bin/bash）
+        # 使用 SHELL=/bin/bash 确保所有子脚本都用 bash 执行
         make -j$(nproc --all) CC=clang O=out ARCH=${{ env.ARCH }} ${{ env.CUSTOM_CMDS }} ${{ env.EXTRA_CMDS }} ${{ env.GCC_64 }} ${{ env.GCC_32 }} ${{ env.KERNEL_CONFIG }} SHELL=/bin/bash
         if [ ${{ env.ENABLE_CCACHE }} = true ]; then
             make -j$(nproc --all) CC="ccache clang" O=out ARCH=${{ env.ARCH }} ${{ env.CUSTOM_CMDS }} ${{ env.EXTRA_CMDS }} ${{ env.GCC_64 }} ${{ env.GCC_32 }} SHELL=/bin/bash
