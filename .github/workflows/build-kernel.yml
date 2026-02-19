@@ -238,12 +238,17 @@ jobs:
             echo "CONFIG_CC_WERROR=n" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
         fi
 
-    # 新增步骤：修复 OpenSSL 3.0 与老内核 sign-file.c 的兼容性
     - name: Fix OpenSSL 3.0 compatibility for sign-file.c
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         sed -i 's/ERR(ERR_get_error_line(&file, \&line), ": %s:%d", file, line);/ERR(ERR_get_error_line(\&file, \&line), "");/g' scripts/sign-file.c
         sed -i 's/fprintf(stderr, ": %s:%d\\n", file, line);/fprintf(stderr, "\\n");/g' scripts/sign-file.c
+
+    # 新增步骤：禁用 LOCALVERSION_AUTO，避免 setlocalversion 脚本出错
+    - name: Disable LOCALVERSION_AUTO
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
+        echo "CONFIG_LOCALVERSION_AUTO=n" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
 
     - name: Setup ccache
       if: env.ENABLE_CCACHE == 'true'
@@ -365,4 +370,3 @@ jobs:
       with:
         name: boot${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
         path: kernel_workspace/boot.img
-        
